@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -14,8 +16,10 @@ func main() {
 		fmt.Println("\nSelect an option:")
 		fmt.Println("1. Separate files by year")
 		fmt.Println("2. Compare internal and external lists")
-		fmt.Println("3. Exit")
-		fmt.Print("Enter choice (1-3): ")
+		fmt.Println("3. Get size of year files")
+		fmt.Println("4. Only create directory + name for copy command of certain files")
+		fmt.Println("5. Exit")
+		fmt.Print("Enter choice (1-5): ")
 
 		var choice int
 		fmt.Scanln(&choice)
@@ -37,6 +41,17 @@ func main() {
 
 			compare(internal, external)
 		case 3:
+			fmt.Print("Enter path to year file (format: fullpath|size|name per line): ")
+			var yearsize string
+			fmt.Scanln(&yearsize)
+			sizeOfYearFiles(yearsize)
+		case 4:
+			fmt.Println("The document format should as the year files formated, this will seperate this to a last directory and name so we can run copy script")
+			fmt.Println("Please mention path with name: ")
+			var copyfiles string
+			fmt.Scanln(&copyfiles)
+			copyConf(copyfiles)
+		case 5:
 			fmt.Println("Exiting... Goodbye!")
 			return
 		default:
@@ -183,4 +198,90 @@ func compare(internal, external string) {
 	}
 
 	fmt.Println("✅ Comparison done! Results saved in output files.")
+}
+
+func sizeOfYearFiles(yearsize string) {
+	file, err := os.Open(yearsize)
+	if err != nil {
+		fmt.Printf("Error opening file %s: %v\n", yearsize, err)
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	var totalBytes int64
+	var lineNo, skipped int
+
+	for scanner.Scan() {
+		lineNo++
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 2 {
+			skipped++
+			continue
+		}
+		sizeStr := strings.TrimSpace(parts[1])
+		sizeStr = strings.ReplaceAll(sizeStr, ",", "") // tolerate thousands sep
+
+		b, err := strconv.ParseInt(sizeStr, 10, 64)
+		if err != nil {
+			// try float fallback (rare), then convert to int64
+			if f, err2 := strconv.ParseFloat(sizeStr, 64); err2 == nil {
+				b = int64(f)
+			} else {
+				skipped++
+				continue
+			}
+		}
+		totalBytes += b
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Error reading file: %v\n", err)
+		return
+	}
+
+	gb := float64(totalBytes) / (1024.0 * 1024.0 * 1024.0)
+	fmt.Printf("Total size: %.3f GB (%d bytes). Processed %d lines, skipped %d lines.\n", gb, totalBytes, lineNo, skipped)
+}
+
+func copyConf(copyfiles string) {
+	file, err := os.Open(copyfiles)
+	if err != nil {
+		fmt.Printf("Error opening file %s: %v\n", copyfiles, err)
+		return
+	}
+	defer file.Close()
+
+	out, err := os.Create("copy_list.txt")
+	if err != nil {
+		fmt.Printf("Error creating output file: %v\n", err)
+		return
+	}
+	defer out.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		parts := strings.Split(scanner.Text(), "|")
+		if len(parts) >= 3 {
+			fullpath := strings.TrimSpace(parts[0])
+			name := strings.TrimSpace(parts[2])
+
+			// take the last directory name from the full path, then join with the filename
+			dir := filepath.Base(filepath.Dir(fullpath))
+			line := fmt.Sprintf("%s/%s\n", dir, name) // output uses forward slash as requested
+			if _, err := out.WriteString(line); err != nil {
+				fmt.Printf("Error writing output: %v\n", err)
+				return
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Error reading input file: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ copy_list.txt created (entries like B78916_1/B78916_1_1.jpg)")
 }

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -17,8 +16,7 @@ func main() {
 		fmt.Println("1. Separate files by year")
 		fmt.Println("2. Compare internal and external lists")
 		fmt.Println("3. Get size of year files")
-		fmt.Println("4. Only create directory + name for copy command of certain files")
-		fmt.Println("5. Exit")
+		fmt.Println("4. Exit")
 		fmt.Print("Enter choice (1-5): ")
 
 		var choice int
@@ -46,12 +44,6 @@ func main() {
 			fmt.Scanln(&yearsize)
 			sizeOfYearFiles(yearsize)
 		case 4:
-			fmt.Println("The document format should as the year files formated, this will seperate this to a last directory and name so we can run copy script")
-			fmt.Println("Please mention path with name: ")
-			var copyfiles string
-			fmt.Scanln(&copyfiles)
-			copyConf(copyfiles)
-		case 5:
 			fmt.Println("Exiting... Goodbye!")
 			return
 		default:
@@ -245,43 +237,4 @@ func sizeOfYearFiles(yearsize string) {
 
 	gb := float64(totalBytes) / (1024.0 * 1024.0 * 1024.0)
 	fmt.Printf("Total size: %.3f GB (%d bytes). Processed %d lines, skipped %d lines.\n", gb, totalBytes, lineNo, skipped)
-}
-
-func copyConf(copyfiles string) {
-	file, err := os.Open(copyfiles)
-	if err != nil {
-		fmt.Printf("Error opening file %s: %v\n", copyfiles, err)
-		return
-	}
-	defer file.Close()
-
-	out, err := os.Create("copy_list.txt")
-	if err != nil {
-		fmt.Printf("Error creating output file: %v\n", err)
-		return
-	}
-	defer out.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		parts := strings.Split(scanner.Text(), "|")
-		if len(parts) >= 3 {
-			fullpath := strings.TrimSpace(parts[0])
-			name := strings.TrimSpace(parts[2])
-
-			// take the last directory name from the full path, then join with the filename
-			dir := filepath.Base(filepath.Dir(fullpath))
-			line := fmt.Sprintf("%s/%s\n", dir, name) // output uses forward slash as requested
-			if _, err := out.WriteString(line); err != nil {
-				fmt.Printf("Error writing output: %v\n", err)
-				return
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading input file: %v\n", err)
-		return
-	}
-
-	fmt.Println("✅ copy_list.txt created (entries like B78916_1/B78916_1_1.jpg)")
 }

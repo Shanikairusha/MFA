@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -16,7 +18,8 @@ func main() {
 		fmt.Println("1. Separate files by year")
 		fmt.Println("2. Compare internal and external lists")
 		fmt.Println("3. Get size of year files")
-		fmt.Println("4. Exit")
+		fmt.Println("4. Convert a file to the Copy format")
+		fmt.Println("5. Exit")
 		fmt.Print("Enter choice (1-5): ")
 
 		var choice int
@@ -44,8 +47,10 @@ func main() {
 			fmt.Scanln(&yearsize)
 			sizeOfYearFiles(yearsize)
 		case 4:
-			fmt.Println("Exiting... Goodbye!")
-			return
+			fmt.Print("Enter path of input file: ")
+			var input string
+			fmt.Scanln(&input)
+			convertToCopyFormat(input)
 		default:
 			fmt.Println("Invalid choice. Please try again.")
 		}
@@ -237,4 +242,68 @@ func sizeOfYearFiles(yearsize string) {
 
 	gb := float64(totalBytes) / (1024.0 * 1024.0 * 1024.0)
 	fmt.Printf("Total size: %.3f GB (%d bytes). Processed %d lines, skipped %d lines.\n", gb, totalBytes, lineNo, skipped)
+}
+
+func convertToCopyFormat(inputFile string) {
+	f, err := os.Open(inputFile)
+	if err != nil {
+		fmt.Printf("Error opening file %s: %v\n", inputFile, err)
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	re := regexp.MustCompile(`[\\/|]`)
+
+	// derive output filename by inserting "-copy" before extension
+	base := filepath.Base(inputFile)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	outName := name + "-copy" + ext
+
+	outFile, err := os.Create(outName)
+	if err != nil {
+		fmt.Printf("Error creating output file %s: %v\n", outName, err)
+		return
+	}
+	defer outFile.Close()
+
+	written := 0
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := re.Split(line, -1)
+		var outLine string
+		if len(parts) >= 4 {
+			folder := parts[len(parts)-4]
+			file := parts[len(parts)-1]
+			outLine = folder + "/" + file
+		} else if len(parts) > 0 {
+			// fallback: use last two parts if available
+			if len(parts) >= 2 {
+				outLine = parts[len(parts)-2] + "/" + parts[len(parts)-1]
+			} else {
+				outLine = parts[len(parts)-1]
+			}
+		}
+
+		if outLine != "" {
+			outFile.WriteString(outLine + "\n")
+			written++
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Error reading input file: %v\n", err)
+		return
+	}
+
+	// Print a PowerShell equivalent command the user can run (with proper escaping)
+	// Note: in PowerShell the split regex must escape the backslash, so we show it as written for PS.
+	psCmd := fmt.Sprintf("Get-Content %s | ForEach-Object { $parts = $_ -split '[\\\\/|]'; $folder = $parts[-4]; $file = $parts[-1]; \"$folder/$file\" } | Set-Content %s", inputFile, outName)
+
+	fmt.Printf("✅ Wrote %d lines to %s\n", written, outName)
+	fmt.Println("PowerShell equivalent command:")
+	fmt.Println(psCmd)
 }
